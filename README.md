@@ -16,6 +16,17 @@ Drop a folder of `.txt` / `.md` novels in, and the pane keeps your place per boo
 └───────────────────────────────┴──────────────────┘
 ```
 
+## Access & data
+
+- **Reads only what you pick** — a folder you grant through the Hermes file door,
+  or individual `.txt`/`.md` files chosen in the OS dialog. Nothing else on disk
+  is opened, and nothing is written outside the plugin's own storage.
+- **Remembers locally** — the shelf (absolute path + file name), your typography
+  settings and one progress mark per book live in Hermes plugin storage, so
+  reopening a book resumes where you stopped.
+- **No network** — no telemetry, no update checks, no remote fonts or images.
+
+
 ## Screenshots
 
 Floating panel beside the conversation (title-bar button → *float*):
