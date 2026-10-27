@@ -39,7 +39,7 @@ cd hermes-novel-reader
 bash scripts/install.sh
 ```
 
-The installer copies `dist/plugin.js` to `$HERMES_HOME/desktop-plugins/novel-reader/plugin.js` (`~/.hermes` by default). The app watches that folder: the pane appears within a few seconds, and every later save hot-reloads in place. If it does not show up, run ⌘K → **Reload desktop plugins**.
+The installer copies `desktop/plugin.js` to `$HERMES_HOME/desktop-plugins/novel-reader/plugin.js` (`~/.hermes` by default). The app watches that folder: the pane appears within a few seconds, and every later save hot-reloads in place. If it does not show up, run ⌘K → **Reload desktop plugins**.
 
 Then click **Choose folder…** (or paste a folder path), or **Open file…** to pick individual books.
 
@@ -71,7 +71,7 @@ Page gutters: hovering the left or right margin of the reading area reveals a `�
 
 ## How it works
 
-`dist/plugin.js` is a single plain-ESM file — no build step, no repo patch, no app source changes. It contributes:
+`desktop/plugin.js` is a single plain-ESM file — no build step, no repo patch, no app source changes. It contributes:
 
 | Surface | Contribution |
 | --- | --- |
@@ -96,9 +96,9 @@ Either way the plugin is **read-only**: it lists a folder, reads files, and writ
 The pure logic (chapter splitting, progress maths, decoding, path helpers) lives in `src/core.js` with no imports, so it is unit-tested directly and then **inlined** into the shipped file by `build.mjs` — the disk-plugin loader only resolves `@hermes/plugin-sdk`, `react`, and `react/jsx-runtime`, so a runtime `import` of a sibling module is not possible.
 
 ```bash
-npm run build    # src/plugin.js + src/core.js → dist/plugin.js
+npm run build    # src/plugin.js + src/core.js → desktop/plugin.js
 npm test         # unit tests + artifact checks (node --test)
-npm run check    # fail if dist/plugin.js is stale
+npm run check    # fail if desktop/plugin.js is stale
 npm run verify   # build + test + check
 ```
 
@@ -109,8 +109,8 @@ Layout:
 ```
 src/core.js        pure helpers (chapter split, progress, decode) — unit tested
 src/plugin.js      UI + plugin wiring (jsx() calls, no JSX syntax, no build)
-build.mjs          inlines core into dist/plugin.js
-dist/plugin.js     the installable artifact (committed)
+build.mjs          inlines core into desktop/plugin.js
+desktop/plugin.js  the installable artifact + catalog entrypoint (committed)
 test/              node --test suites
 ```
 

@@ -12,7 +12,7 @@
  *      door current builds actually have; the same one the Files panel uses.
  * Both are read-only, and the plugin writes nothing outside its own storage.
  *
- * Packaged by `build.mjs` into `dist/plugin.js` (the file you install). Plain
+ * Packaged by `build.mjs` into `desktop/plugin.js` (the file you install). Plain
  * ESM, loaded uncompiled: the UI is jsx() calls, and the only resolvable
  * imports are `@hermes/plugin-sdk`, `react`, and `react/jsx-runtime`.
  */
@@ -731,6 +731,14 @@ async function boot() {
 
 let booted = false
 
+// Panel geometry, measured off OUR OWN chrome only: the title-bar button this
+// plugin renders. The app's markup (`[data-slot=…]`, `[data-titlebar-cluster]`)
+// is off limits to a catalog plugin — querying it to position a panel is the
+// "app DOM reach" the Desktop surface check refuses — and a hardcoded status
+// bar height is stable across builds, so nothing needs measuring there.
+const STATUS_BAR_HEIGHT = 30
+let titlebarBottom = 0
+
 function ensureBoot() {
   if (booted) {
     return
@@ -782,6 +790,22 @@ function Chip() {
 function TitleBarReader() {
   const t = usePluginI18n(ID)
   const open = useValue(overlayOpen)
+  const titlebarRef = useRef(null)
+
+  useEffect(() => {
+    const measure = () => {
+      const rect = titlebarRef.current?.getBoundingClientRect()
+
+      if (rect) {
+        titlebarBottom = Math.round(rect.bottom)
+      }
+    }
+
+    measure()
+    const off = ctxRef?.addEventListener?.(window, 'resize', measure)
+
+    return () => off?.()
+  }, [])
 
   return jsxs(Fragment, {
     children: [
@@ -794,6 +818,7 @@ function TitleBarReader() {
           className: 'nr-titlebar-btn',
           'data-active': open,
           'data-nr': 'titlebar',
+          ref: titlebarRef,
           onClick: () => (overlayOpen.get() ? overlayOpen.set(false) : openReader()),
           type: 'button',
           children: jsx(Codicon, { name: 'book', size: 14 })
@@ -813,14 +838,7 @@ function ReadingPanel() {
   const [insets, setInsets] = useState({ bottom: 28, top: 34 })
 
   useEffect(() => {
-    const measure = () => {
-      const titlebar = document.querySelector('[data-titlebar-cluster="left"]') ?? document.querySelector('[data-titlebar-cluster="right"]')
-      const statusbar = document.querySelector('[data-slot="statusbar"]')
-      const top = titlebar ? Math.round(titlebar.getBoundingClientRect().bottom + 8) : 34
-      const bottom = statusbar ? Math.round(window.innerHeight - statusbar.getBoundingClientRect().top) : 28
-
-      setInsets({ bottom: Math.max(8, bottom), top: Math.max(24, top) })
-    }
+    const measure = () => setInsets({ bottom: STATUS_BAR_HEIGHT, top: Math.max(24, titlebarBottom + 6) })
 
     measure()
     const listener = ctxRef.addEventListener(window, 'resize', measure)

@@ -18,5 +18,5 @@ jobs:
       - name: Unit tests
         run: npm test
 
-      - name: dist/plugin.js is up to date
+      - name: desktop/plugin.js is up to date
         run: npm run check

@@ -10,7 +10,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HOME_DIR="${HERMES_HOME:-$HOME/.hermes}"
 TARGET="$HOME_DIR/desktop-plugins/novel-reader"
-SOURCE="$ROOT/dist/plugin.js"
+SOURCE="$ROOT/desktop/plugin.js"
 
 if [[ ! -f "$SOURCE" ]]; then
   echo "install: $SOURCE is missing — run 'npm run build' first" >&2

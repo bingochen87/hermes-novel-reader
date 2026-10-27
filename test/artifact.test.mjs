@@ -2,9 +2,9 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { test } from 'node:test'
 
-const DIST = new URL('../dist/plugin.js', import.meta.url)
+const DIST = new URL('../desktop/plugin.js', import.meta.url)
 
-test('dist/plugin.js exists and is installable shape', async () => {
+test('desktop/plugin.js exists and is installable shape', async () => {
   const source = await readFile(DIST, 'utf8')
 
   assert.doesNotMatch(source, /from '\.\/core\.js'/, 'core must be inlined')
@@ -22,7 +22,7 @@ test('dist/plugin.js exists and is installable shape', async () => {
   }
 })
 
-test('dist/plugin.js parses as a module', async () => {
+test('desktop/plugin.js parses as a module', async () => {
   // Importing fails on the unresolvable SDK specifier — but only after the file
   // itself parses. A SyntaxError here means the build produced broken output.
   const error = await import(DIST.href).then(() => null, cause => cause)
