@@ -1,0 +1,30 @@
+{
+  "name": "hermes-novel-reader",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A distraction-free .txt/.md novel reader pane for the Hermes desktop app",
+  "type": "module",
+  "license": "MIT",
+  "author": "bingochen87",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bingochen87/hermes-novel-reader.git"
+  },
+  "keywords": [
+    "hermes",
+    "hermes-plugin",
+    "desktop-plugin",
+    "reader",
+    "novel",
+    "txt"
+  ],
+  "scripts": {
+    "build": "node build.mjs",
+    "check": "node build.mjs --check",
+    "test": "node --test",
+    "verify": "npm run build && npm run test && npm run check"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
