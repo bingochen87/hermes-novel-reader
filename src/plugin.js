@@ -838,7 +838,7 @@ function ReadingPanel() {
   const [insets, setInsets] = useState({ bottom: 28, top: 34 })
 
   useEffect(() => {
-    const measure = () => setInsets({ bottom: STATUS_BAR_HEIGHT, top: Math.max(24, titlebarBottom + 6) })
+    const measure = () => setInsets({ bottom: STATUS_BAR_HEIGHT, top: Math.max(24, titlebarBottom + 8) })
 
     measure()
     const listener = ctxRef.addEventListener(window, 'resize', measure)

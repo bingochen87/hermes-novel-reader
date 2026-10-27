@@ -16,6 +16,17 @@ Drop a folder of `.txt` / `.md` novels in, and the pane keeps your place per boo
 └───────────────────────────────┴──────────────────┘
 ```
 
+## Screenshots
+
+Floating panel beside the conversation (title-bar button → *float*):
+
+![Reading panel over the chat](assets/panel.png)
+
+The same reader as a full page (`/novel`, the sidebar row, or the status-bar chip):
+
+![Full-page reader](assets/page.png)
+
+
 ## Features
 
 - **Chapter detection** — `第N章` / `第N节` / `Chapter N` / `序章` / `楔子` / `番外` …, with dot-leader table-of-contents lines and leading `目录` lists filtered out. A file with no headings is chunked into parts, so a 5 MB dump still pages instead of freezing the UI.
