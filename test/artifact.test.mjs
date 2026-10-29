@@ -22,6 +22,17 @@ test('desktop/plugin.js exists and is installable shape', async () => {
   }
 })
 
+test('file access is ctx.files only — no Electron bridge fallback', async () => {
+  const source = await readFile(DIST, 'utf8')
+
+  // The catalog reviews this: a plugin reaches files through the host's door, not
+  // through the preload bridge the app happens to expose.
+  assert.doesNotMatch(source, /hermesDesktop/, 'no window.hermesDesktop reach')
+  assert.doesNotMatch(source, /\bselectPaths\b/, 'no single-file picker')
+  assert.doesNotMatch(source, /\breadFileDataUrl\b/, 'no bridge read')
+  assert.match(source, /ctxRef\.files|files\.readDataUrl/, 'reads through ctx.files')
+})
+
 test('desktop/plugin.js parses as a module', async () => {
   // Importing fails on the unresolvable SDK specifier — but only after the file
   // itself parses. A SyntaxError here means the build produced broken output.

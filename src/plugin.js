@@ -6,11 +6,11 @@
  * controls, four reading themes, keyboard and click page turns, and a saved
  * position per book that survives restarts.
  *
- * Two filesystem doors, feature-detected at runtime:
- *   1. `ctx.files` (granted folders) — the sanctioned door on newer builds.
- *   2. `window.hermesDesktop.readDir / readFileDataUrl / selectPaths` — the
- *      door current builds actually have; the same one the Files panel uses.
- * Both are read-only, and the plugin writes nothing outside its own storage.
+ * File access goes through `ctx.files` only — the host grants a folder, the
+ * reader lists it and reads files with paths relative to the grant. There is no
+ * bridge fallback and no single-file picker: a host without `ctx.files` gets a
+ * explanatory empty state instead of a button that cannot work. Reads are
+ * read-only, and the plugin writes nothing outside its own storage.
  *
  * Packaged by `build.mjs` into `desktop/plugin.js` (the file you install). Plain
  * ESM, loaded uncompiled: the UI is jsx() calls, and the only resolvable
@@ -25,9 +25,9 @@ import { Fragment, useEffect, useRef, useState } from 'react'
 import { jsx, jsxs } from 'react/jsx-runtime'
 // ---8<--- core: inlined by build.mjs from src/core.js ---8<---
 import {
-  bookFraction, chapterAtOffset, chapterOffset, clamp01, dataUrlToBytes, decodeBookText, isBookFile,
-  percentLabel, resumeLine, sanitizeText, scrollOffsetFor, scrollRatio, sortBookEntries, splitChapters,
-  titleFromPath
+  bookFraction, chapterAtOffset, chapterOffset, clamp01, dataUrlToBytes, decodeBookText, grantRoot,
+  isBookFile, normalizeListing, percentLabel, resumeLine, sanitizeText, scrollOffsetFor, scrollRatio,
+  sortBookEntries, splitChapters, titleFromPath
 } from './core.js'
 // ---8<--- end core ---8<---
 
@@ -38,7 +38,6 @@ const MAX_FONT = 26
 const TOC_RENDER_LIMIT = 2000
 
 const DEFAULTS = { family: 'serif', fontSize: 17, lineHeight: 1.9, surface: 'float', theme: 'auto' }
-const BOOK_EXTENSIONS = ['txt', 'text', 'md', 'markdown']
 const THEMES = ['auto', 'paper', 'green', 'night']
 const THEME_GLYPH = { auto: '◐', green: '❦', night: '☾', paper: '▤' }
 
@@ -48,13 +47,10 @@ const LOCALES = {
     emptyTitle: 'No book open',
     emptyBody: 'Pick the folder your books live in. Plain .txt and .md files — UTF-8 or GBK.',
     chooseFolder: 'Choose folder…',
-    openFile: 'Open file…',
     resumeReading: '← Reading now',
     prevPage: 'Page back',
     nextPage: 'Page forward',
-    pathLabel: 'or paste a folder path',
-    open: 'Open',
-    shelfFiles: count => `${count} chosen files`,
+    needsFiles: 'This reader needs a Hermes build that ships the plugin file door (ctx.files). Update Hermes, then choose the folder your books are in.',
     navLabel: 'Reading',
     library: 'Library',
     contents: 'Table of contents',
@@ -91,13 +87,10 @@ const LOCALES = {
     emptyTitle: '还没有打开书',
     emptyBody: '选一个放小说的文件夹，支持 .txt 和 .md，UTF-8 或 GBK 都行。',
     chooseFolder: '选择文件夹…',
-    openFile: '打开文件…',
     resumeReading: '← 正在读的书',
     prevPage: '上一页',
     nextPage: '下一页',
-    pathLabel: '或直接粘贴文件夹路径',
-    open: '打开',
-    shelfFiles: count => `选中的 ${count} 个文件`,
+    needsFiles: '这个阅读器需要带插件文件接口（ctx.files）的 Hermes 版本。升级后再选择小说所在的文件夹。',
     navLabel: '阅读',
     library: '书架',
     contents: '目录',
@@ -134,13 +127,10 @@ const LOCALES = {
     emptyTitle: '還沒有開啟書',
     emptyBody: '選一個放小說的資料夾，支援 .txt 和 .md，UTF-8 或 GBK 都可以。',
     chooseFolder: '選擇資料夾…',
-    openFile: '開啟檔案…',
     resumeReading: '← 正在讀的書',
     prevPage: '上一頁',
     nextPage: '下一頁',
-    pathLabel: '或直接貼上資料夾路徑',
-    open: '開啟',
-    shelfFiles: count => `選取的 ${count} 個檔案`,
+    needsFiles: '這個閱讀器需要帶外掛檔案介面（ctx.files）的 Hermes 版本。升級後再選擇小說所在的資料夾。',
     navLabel: '閱讀',
     library: '書架',
     contents: '目錄',
@@ -362,35 +352,46 @@ function flushProgress() {
  * survive restarts. Only present on builds that ship the plugin-files bridge.
  */
 function grantDoor(ctx) {
+  const files = ctx.files
+
   return {
     kind: 'grant',
 
-    async pick() {
-      const result = await ctx.files.requestFolder()
+    /** Grants the user already gave this plugin — how a restart finds them again. */
+    async folders() {
+      try {
+        const list = await files.folders?.()
 
-      if (!result || !result.ok || !result.folder) {
+        return Array.isArray(list) ? list : []
+      } catch {
+        return []
+      }
+    },
+
+    async pick() {
+      const result = await files.requestFolder()
+
+      // Cancelled, refused, or an app build whose door reports `unavailable`.
+      if (!result?.ok || !result.folder) {
         return null
       }
 
-      return { id: result.folder.id, name: result.folder.name, path: result.folder.path }
+      return grantRoot(result.folder)
     },
 
     async list(root) {
-      const result = await ctx.files.list(root.id, '')
+      const result = await files.list(root.id, '')
+      const entries = normalizeListing(result)
 
-      if (!result || result.ok === false) {
+      if (!entries) {
         throw new Error(result?.message || result?.error || 'list failed')
       }
 
-      return (result.entries || []).map(entry => ({
-        isDirectory: Boolean(entry.isDirectory),
-        name: entry.name,
-        rel: entry.path
-      }))
+      return entries
     },
 
     async read(root, entry) {
-      const result = await ctx.files.readDataUrl(root.id, entry.rel)
+      const result = await files.readDataUrl(root.id, entry.rel)
 
       if (!result || result.ok === false) {
         throw new Error(result?.message || result?.error || 'read failed')
@@ -407,78 +408,13 @@ function grantDoor(ctx) {
   }
 }
 
-/**
- * Electron bridge door — what current builds expose. Paths are absolute, and the
- * user grants access by picking the folder (or pasting its path).
- */
-function bridgeDoor(bridge) {
-  const join = (root, rel) => (rel ? `${root.path}/${rel}` : root.path)
-
-  return {
-    kind: 'bridge',
-
-    async pick(defaultPath) {
-      const picked = await bridge.selectPaths({
-        defaultPath: defaultPath || undefined,
-        directories: true,
-        multiple: false,
-        title: 'Choose your book folder'
-      })
-
-      const path = Array.isArray(picked) ? picked[0] : null
-
-      if (!path) {
-        return null
-      }
-
-      return { name: path.split(/[\\/]/).filter(Boolean).pop() || path, path }
-    },
-
-    async list(root) {
-      const result = await bridge.readDir(root.path)
-
-      if (!result || result.error) {
-        throw new Error(result?.error || 'list failed')
-      }
-
-      const prefix = root.path.endsWith('/') ? root.path : `${root.path}/`
-
-      return (result.entries || []).map(entry => ({
-        isDirectory: Boolean(entry.isDirectory),
-        name: entry.name,
-        rel: entry.path.startsWith(prefix) ? entry.path.slice(prefix.length) : entry.name
-      }))
-    },
-
-    async read(root, entry) {
-      // A shelf of individually chosen files carries its own absolute path; a
-      // folder listing carries a path relative to the chosen folder.
-      const url = await bridge.readFileDataUrl(entry.abs ?? join(root, entry.rel))
-
-      if (typeof url !== 'string') {
-        throw new Error(url?.error || 'read failed')
-      }
-
-      const bytes = dataUrlToBytes(url)
-
-      if (!bytes) {
-        throw new Error('unreadable data url')
-      }
-
-      return bytes
-    }
-  }
-}
-
 function ensureDoor() {
   if (door) {
     return door
   }
 
-  if (ctxRef.files && typeof ctxRef.files.requestFolder === 'function') {
+  if (typeof ctxRef.files?.requestFolder === 'function' && typeof ctxRef.files?.list === 'function') {
     door = grantDoor(ctxRef)
-  } else if (typeof window !== 'undefined' && window.hermesDesktop?.readFileDataUrl) {
-    door = bridgeDoor(window.hermesDesktop)
   }
 
   return door
@@ -488,7 +424,7 @@ function ensureDoor() {
 // Actions
 // ---------------------------------------------------------------------------
 
-async function openFolder(explicitPath) {
+async function openFolder() {
   const active = ensureDoor()
 
   if (!active) {
@@ -496,15 +432,14 @@ async function openFolder(explicitPath) {
     return
   }
 
-  const root = explicitPath
-    ? { name: explicitPath.split(/[\\/]/).filter(Boolean).pop() || explicitPath, path: explicitPath }
-    : await active.pick(current().root?.path)
+  const root = await active.pick()
 
   if (!root) {
     return
   }
 
-  ctxRef.storage.set('root', { kind: active.kind, ...root })
+  // The grant id is what survives a restart — the path is only a label.
+  ctxRef.storage.set('root', root)
   patch({ error: null, loading: true, phase: 'library', root })
 
   try {
@@ -514,49 +449,6 @@ async function openFolder(explicitPath) {
     patch({ books, loading: false })
   } catch (error) {
     patch({ books: [], error: String(error?.message || error), loading: false })
-  }
-}
-
-/**
- * Open individual books instead of scanning a folder. Only the Electron bridge
- * door can do this — `ctx.files` grants whole folders and has no single-file
- * picker, so the button hides itself on that door.
- */
-async function openFiles() {
-  const bridge = typeof window !== 'undefined' ? window.hermesDesktop : null
-
-  if (!bridge?.selectPaths) {
-    return
-  }
-
-  const picked = await bridge.selectPaths({
-    directories: false,
-    filters: [{ extensions: BOOK_EXTENSIONS, name: 'Books' }],
-    multiple: true,
-    title: 'Open books'
-  })
-
-  const entries = (Array.isArray(picked) ? picked : [])
-    .filter(path => isBookFile(path))
-    .map(path => ({ abs: path, isDirectory: false, name: path.split(/[\\/]/).pop() || path, rel: path }))
-
-  if (!entries.length) {
-    return
-  }
-
-  const root = {
-    kind: 'files',
-    name: entries.length === 1 ? titleFromPath(entries[0].name) : `${entries.length} files`,
-    path: ''
-  }
-
-  ctxRef.storage.set('root', root)
-  ctxRef.storage.set('shelf', entries.map(entry => ({ abs: entry.abs, name: entry.name })))
-  ensureDoor()
-  patch({ books: sortBookEntries(entries), error: null, loading: false, phase: 'library', root })
-
-  if (entries.length === 1) {
-    await openBook(entries[0])
   }
 }
 
@@ -627,9 +519,8 @@ async function openBook(entry) {
       throw new Error('empty file')
     }
 
-    // One key per book: the absolute path for a chosen file, the path relative to
-    // the granted folder otherwise.
-    const key = entry.abs ?? entry.rel
+    // One key per book: its path inside the granted folder.
+    const key = entry.rel
 
     bookText = text
     positionRel = key
@@ -697,35 +588,30 @@ async function boot() {
 
   const active = ensureDoor()
 
-  // A shelf of chosen files has no folder path at all, so the path check cannot
-  // be the only gate here.
-  if (!active || (!savedRoot?.path && savedRoot?.kind !== 'files')) {
-    patch({ error: active ? null : 'no-file-door', phase: 'empty' })
+  // A host without `ctx.files` has no way to hand us a file, so there is nothing
+  // to offer but the explanation.
+  if (!active) {
+    patch({ error: 'no-file-door', phase: 'empty' })
     return
   }
 
-  const root = { id: savedRoot.id, kind: savedRoot.kind, name: savedRoot.name, path: savedRoot.path }
+  // A grant is remembered by the app, not by us: ask which folders this plugin
+  // still holds, so a folder revoked in Capabilities → Plugins drops out here
+  // instead of failing on the next read.
+  const granted = await active.folders()
+  const remembered = savedRoot?.id && (!granted.length || granted.some(folder => folder.id === savedRoot.id))
+    ? { id: savedRoot.id, name: savedRoot.name, path: savedRoot.path }
+    : null
+  const firstGrant = granted[0]
+  const root = remembered ?? (firstGrant ? { id: firstGrant.id, name: firstGrant.name, path: firstGrant.path } : null)
 
-  if (savedRoot.kind === 'files') {
-    const shelf = ctxRef.storage.get('shelf', [])
-    const books = sortBookEntries(
-      (Array.isArray(shelf) ? shelf : [])
-        .filter(entry => entry && entry.abs)
-        .map(entry => ({ abs: entry.abs, isDirectory: false, name: entry.name, rel: entry.abs }))
-    )
-    const last = ctxRef.storage.get('last', null)
-
-    patch({ books, loading: false, phase: 'library', root })
-
-    const match = last?.rel ? books.find(book => book.rel === last.rel) : null
-
-    if (match) {
-      await openBook(match)
-    }
-
+  if (!root) {
+    ctxRef.storage.remove('root')
+    patch({ books: [], loading: false, phase: 'empty' })
     return
   }
 
+  ctxRef.storage.set('root', root)
   patch({ loading: true, phase: 'library', root })
 
   try {
@@ -1027,9 +913,6 @@ function Library({ state, t }) {
         style: { borderBottom: 'none', padding: '6px 6px 4px' },
         children: [
           jsx('button', { className: 'nr-ghost', 'data-nr': 'choose-folder', onClick: () => void openFolder(), type: 'button', children: t('chooseFolder') }),
-          door?.kind === 'grant'
-            ? null
-            : jsx('button', { className: 'nr-ghost', 'data-nr': 'open-file', onClick: () => void openFiles(), type: 'button', children: t('openFile') }),
           state.book
             ? jsx('button', {
                 'aria-label': t('resumeReading'),
@@ -1071,42 +954,22 @@ function Library({ state, t }) {
 }
 
 function Empty({ state, t }) {
-  const [path, setPath] = useState('')
-  const open = () => {
-    const trimmed = path.trim()
-
-    if (trimmed) {
-      void openFolder(trimmed)
-    }
-  }
+  // No `ctx.files` means no sanctioned way to reach a file, so the picker is not
+  // rendered at all rather than rendered and broken.
+  const available = Boolean(door)
 
   return jsxs('div', {
     className: 'nr-empty',
     children: [
       jsx('div', { className: 'nr-empty-title', children: t('emptyTitle') }),
-      jsx('div', { className: 'nr-empty-body', children: state.error && state.error !== 'no-file-door' ? t('folderFailed') : t('emptyBody') }),
-      jsx('button', { className: 'nr-primary', 'data-nr': 'choose-folder', onClick: () => void openFolder(), type: 'button', children: t('chooseFolder') }),
-      door?.kind === 'grant'
-        ? null
-        : jsx('button', { className: 'nr-ghost', 'data-nr': 'open-file', onClick: () => void openFiles(), type: 'button', children: t('openFile') }),
-      door?.kind === 'bridge'
-        ? jsxs('div', {
-            className: 'nr-path',
-            children: [
-              jsx('input', {
-                'aria-label': t('pathLabel'),
-                onChange: event => setPath(event.target.value),
-                onKeyDown: event => {
-                  if (event.key === 'Enter') {
-                    open()
-                  }
-                },
-                placeholder: t('pathLabel'),
-                value: path
-              }),
-              jsx('button', { className: 'nr-ghost', disabled: !path.trim(), onClick: open, type: 'button', children: t('open') })
-            ]
-          })
+      jsx('div', {
+        className: 'nr-empty-body',
+        children: available
+          ? state.error && state.error !== 'no-file-door' ? t('folderFailed') : t('emptyBody')
+          : t('needsFiles')
+      }),
+      available
+        ? jsx('button', { className: 'nr-primary', 'data-nr': 'choose-folder', onClick: () => void openFolder(), type: 'button', children: t('chooseFolder') })
         : null
     ]
   })

@@ -229,6 +229,37 @@ export function scrollOffsetFor(ratio, { clientHeight, scrollHeight }) {
  * instead of starting a few characters in.
  */
 /**
+ * Shapes returned by the host's plugin file door (`ctx.files`), normalised so the
+ * reader never touches a raw host payload:
+ *   requestFolder() → { ok, folder: { id, name, path } }
+ *   list(id, path)  → { ok, entries: [{ name, path, isDirectory }] }
+ * A null return means "the door refused" — callers show that, they do not guess.
+ */
+export function grantRoot(folder) {
+  if (!folder || typeof folder.id !== 'string' || !folder.id) {
+    return null
+  }
+
+  return {
+    id: folder.id,
+    name: String(folder.name || folder.path || 'folder'),
+    path: String(folder.path || '')
+  }
+}
+
+export function normalizeListing(result) {
+  if (!result || result.ok === false || !Array.isArray(result.entries)) {
+    return null
+  }
+
+  return result.entries.map(entry => ({
+    isDirectory: Boolean(entry?.isDirectory),
+    name: String(entry?.name ?? ''),
+    rel: String(entry?.path ?? entry?.name ?? '')
+  }))
+}
+
+/**
  * Character offset of a position, measured in the sanitised book text. Storing
  * this instead of a chapter index keeps a bookmark meaningful when the chapter
  * list itself changes (a smarter heading rule, a re-encoded file): the index

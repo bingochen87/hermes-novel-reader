@@ -10,7 +10,9 @@ description: >
   contents, sniffs UTF-8 / GBK / GB18030, and remembers a per-book position, so
   reopening a book resumes where you stopped. Opens from a sidebar row and a
   /novel page, a status-bar chip, a title-bar button (floating panel, or a
-  docked right-edge column), and a contributed layout pane. Desktop-only
+  docked right-edge column), and a contributed layout pane. Reads only the book
+  folder the user grants through the plugin file door (ctx.files), never leaves
+  it, and writes nothing outside its own storage. Desktop-only
   (desktop/plugin.js inside the plugin SDK surface); no agent tools, hooks,
   middleware or env vars, and no network access.
 tags: [desktop, reading, novel, txt, productivity]

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import {
-  bookFraction, chapterAtOffset, chapterOffset, clamp01, dataUrlToBytes, decodeBookText, isBookFile, isChapterHeading, percentLabel,
+  bookFraction, chapterAtOffset, chapterOffset, clamp01, dataUrlToBytes, grantRoot, normalizeListing, decodeBookText, isBookFile, isChapterHeading, percentLabel,
   resumeLine, sanitizeText, scrollOffsetFor, scrollRatio, sortBookEntries, splitChapters, splitParts,
   titleFromPath
 } from '../src/core.js'
@@ -161,6 +161,26 @@ test('scroll helpers clamp and round-trip', () => {
   assert.equal(scrollOffsetFor(4, box), 1600)
   assert.equal(clamp01(Number.NaN), 0)
   assert.equal(clamp01(-3), 0)
+})
+
+test('the plugin file door payloads are normalised, refusals are null', () => {
+  assert.deepEqual(grantRoot({ id: 'g1', name: 'Books', path: '/books' }), { id: 'g1', name: 'Books', path: '/books' })
+  assert.equal(grantRoot(null), null)
+  assert.equal(grantRoot({ name: 'no id' }), null, 'a folder without an id is not a grant')
+
+  const listing = normalizeListing({
+    ok: true,
+    entries: [
+      { name: 'a.txt', path: 'a.txt', isDirectory: false },
+      { name: 'sub', path: 'sub', isDirectory: true }
+    ]
+  })
+  assert.deepEqual(listing, [
+    { isDirectory: false, name: 'a.txt', rel: 'a.txt' },
+    { isDirectory: true, name: 'sub', rel: 'sub' }
+  ])
+  assert.equal(normalizeListing({ ok: false, error: 'not-granted' }), null, 'refusal is null, not []')
+  assert.equal(normalizeListing(null), null)
 })
 
 test('chapterOffset / chapterAtOffset round-trip across a re-split', () => {

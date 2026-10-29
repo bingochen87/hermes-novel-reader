@@ -2,7 +2,7 @@
 
 A distraction-free reading pane for the [Hermes desktop app](https://hermes-agent.nousresearch.com/docs) — for the minutes you spend waiting on the agent.
 
-Drop a folder of `.txt` / `.md` novels in, and the pane keeps your place per book: chapter detection, four reading themes, page turns from the keyboard, and a bookmark that survives quitting the app.
+Drop a folder of `.txt` / `.md` novels in — through the host's own folder picker — and the pane keeps your place per book: chapter detection, four reading themes, page turns from the keyboard, and a bookmark that survives quitting the app.
 
 ```
 ┌───────────────────────────────┬──────────────────┐
@@ -18,10 +18,12 @@ Drop a folder of `.txt` / `.md` novels in, and the pane keeps your place per boo
 
 ## Access & data
 
-- **Reads only what you pick** — a folder you grant through the Hermes file door,
-  or individual `.txt`/`.md` files chosen in the OS dialog. Nothing else on disk
-  is opened, and nothing is written outside the plugin's own storage.
-- **Remembers locally** — the shelf (absolute path + file name), your typography
+- **Reads only the folder you grant** — every file goes through `ctx.files`, the
+  host's plugin file door: the app's own picker grants a folder, the reader lists
+  it and reads paths relative to it, and the app's main process refuses anything
+  outside. No bridge fallback, no typed paths, no walking the disk. Nothing is
+  written outside the plugin's own storage.
+- **Remembers locally** — the folder grant (kept by the app), your typography
   settings and one progress mark per book live in Hermes plugin storage, so
   reopening a book resumes where you stopped.
 - **No network** — no telemetry, no update checks, no remote fonts or images.
@@ -43,7 +45,7 @@ The same reader as a full page (`/novel`, the sidebar row, or the status-bar chi
 - **Chapter detection** — `第N章` / `第N节` / `Chapter N` / `序章` / `楔子` / `番外` …, with dot-leader table-of-contents lines and leading `目录` lists filtered out. A file with no headings is chunked into parts, so a 5 MB dump still pages instead of freezing the UI.
 - **Encoding that works** — reads UTF-8, and falls back to GB18030 (GBK/GB2312) when the bytes are not valid UTF-8. Most Chinese `.txt` novels still ship in GBK.
 - **Remembers where you stopped** — per-book chapter + scroll ratio, written as you read and on unload.
-- **Folder or single files** — point it at a folder, or open individual books (`Open file…`, multi-select); the shelf remembers which files you chose.
+- **A folder, then a book** — grant a folder once and pick from the list; the grant survives restarts and is revocable in *Capabilities → Plugins → Folder access*.
 - **Four reading themes** — app-native, paper, eye-care green, night. Serif/sans toggle, 13–26 px, adjustable line height.
 - **Page turns** — `Space` / `→` / `j`, `←` / `k`, plus hover-only `‹ ›` gutters at the reading margins. Clicking the text itself never moves the page, so selection and carets behave. Crossing a chapter edge advances the chapter.
 - **Table of contents** — filterable, jumps and closes itself.
@@ -53,7 +55,7 @@ The same reader as a full page (`/novel`, the sidebar row, or the status-bar chi
 
 ## Install
 
-Requires the Hermes desktop app (0.22.5 or newer).
+Requires a Hermes desktop build that ships the plugin file door (`ctx.files`). On a build without it the reader still loads, but its empty state says so and offers no picker rather than a button that cannot work.
 
 ```bash
 git clone https://github.com/bingochen87/hermes-novel-reader.git
@@ -63,7 +65,7 @@ bash scripts/install.sh
 
 The installer copies `desktop/plugin.js` to `$HERMES_HOME/desktop-plugins/novel-reader/plugin.js` (`~/.hermes` by default). The app watches that folder: the pane appears within a few seconds, and every later save hot-reloads in place. If it does not show up, run ⌘K → **Reload desktop plugins**.
 
-Then click **Choose folder…** (or paste a folder path), or **Open file…** to pick individual books.
+Then click **Choose folder…** and grant the folder your books live in.
 
 **Where is it?** Click the book button in the title bar (top right) and the reader opens beside the chat — Esc or the panel's `×` closes it. Or use the **Reading** row in the sidebar / the status-bar chip / ⌘K for the full-page reader.
 
@@ -106,12 +108,7 @@ Page gutters: hovering the left or right margin of the reading area reveals a `�
 | Status bar | permanent chip: book + percent, or the reader's name before a book is open |
 | ⌘K palette | “open reader” and “open a book folder” |
 
-Filesystem access is feature-detected, because two doors exist:
-
-1. **`ctx.files`** (granted folders, the sanctioned plugin door on newer builds) — used when present.
-2. **`window.hermesDesktop.readDir / readFileDataUrl / selectPaths`** — the Electron bridge the Files panel itself uses. On builds without `ctx.files` (including 0.22.5) this is the only way in, and the folder you pick is remembered.
-
-Either way the plugin is **read-only**: it lists a folder, reads files, and writes nothing outside its own plugin storage (`hermes.plugin.novel-reader.*`).
+Filesystem access is `ctx.files` only — `requestFolder()` for the grant, `list(id, path)` for the folder, `readDataUrl(id, path)` for a book (a data URL, because 5 MB novels exceed the 4 MiB text-read limit), and `folders()` at boot to recover the grant the app already remembers. The plugin is **read-only**: it lists a folder and reads files, and writes nothing outside its own plugin storage (`hermes.plugin.novel-reader.*`). There is deliberately no `window.hermesDesktop` fallback and no single-file picker; when `ctx.files` is absent the UI hides the picker and says why.
 
 ## Development
 
@@ -140,7 +137,7 @@ test/              node --test suites
 
 - **`.txt` and `.md` only.** EPUB/MOBI need a container parser (zip + XHTML) and are out of scope for now.
 - **One folder deep.** Subfolders are not browsed; pick the folder that holds the books.
-- **`Open file…` needs the Electron bridge door.** It is hidden when only `ctx.files` is available, because granted folders have no single-file picker.
+- **A folder, not a file.** `ctx.files` grants folders; opening one loose file needs a host hook that does not exist yet, so the picker is folder-only.
 - **Chapter heuristics are heuristics.** A heading is a short line that starts with a chapter token and carries no sentence punctuation. Books with unusual markers land in part-chunked mode, which still reads and pages fine.
 - Progress is stored per profile, in the app's local storage for the plugin (`pos:<file>`), so it does not travel between machines.
 
