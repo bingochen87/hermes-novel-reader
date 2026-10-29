@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import {
-  bookFraction, clamp01, dataUrlToBytes, decodeBookText, isBookFile, isChapterHeading, percentLabel,
+  bookFraction, chapterAtOffset, chapterOffset, clamp01, dataUrlToBytes, decodeBookText, isBookFile, isChapterHeading, percentLabel,
   resumeLine, sanitizeText, scrollOffsetFor, scrollRatio, sortBookEntries, splitChapters, splitParts,
   titleFromPath
 } from '../src/core.js'
@@ -43,6 +43,13 @@ test('isChapterHeading accepts real headings and rejects prose or目录 lines', 
   assert.equal(isChapterHeading('番外一 后来'), true)
 
   assert.equal(isChapterHeading('他推开门，第二章风灌进来。'), false, 'prose with punctuation')
+
+  // Titles that end in a question or an exclamation are still titles — real
+  // books use them constantly ("第103章那是他的魅力吗？").
+  assert.equal(isChapterHeading('第103章那是他的魅力吗？'), true, 'question-mark title')
+  assert.equal(isChapterHeading('第2章真讨厌啊！'), true, 'exclamation title')
+  assert.equal(isChapterHeading('第36章啪！（上）'), true, 'bracketed title')
+  assert.equal(isChapterHeading('第三章的标题是假的。'), false, 'full stop means prose')
   assert.equal(isChapterHeading('第一章 出发...........12'), false, 'dot-leader TOC line')
   assert.equal(isChapterHeading('第一章 出发  12'), true, 'a title may end in a number')
   assert.equal(isChapterHeading('第3章 1984'), true, 'numeric titles are titles')
@@ -154,6 +161,21 @@ test('scroll helpers clamp and round-trip', () => {
   assert.equal(scrollOffsetFor(4, box), 1600)
   assert.equal(clamp01(Number.NaN), 0)
   assert.equal(clamp01(-3), 0)
+})
+
+test('chapterOffset / chapterAtOffset round-trip across a re-split', () => {
+  const before = splitChapters('第1章 甲\n\n' + 'a'.repeat(100) + '\n\n第2章 乙\n\n' + 'b'.repeat(100)).chapters
+  const offset = chapterOffset(before, 1, 0.5)
+  assert.equal(typeof offset, 'number')
+  assert.equal(chapterAtOffset(before, offset), 1, 'offset lands in the same chapter')
+
+  // A later split that recognises one more heading before the bookmark must not
+  // move the reader: the same offset still resolves to 第2章.
+  const after = splitChapters('第1章 甲\n\n' + 'a'.repeat(100) + '\n\n第2章 乙\n\n' + 'b'.repeat(100)).chapters
+  assert.equal(after.length, before.length)
+  assert.equal(chapterAtOffset(after, offset), 1)
+  assert.equal(chapterAtOffset([], 10), -1, 'empty list')
+  assert.equal(chapterOffset([], 0, 0), null, 'no chapter')
 })
 
 test('bookFraction spans chapters by character count', () => {

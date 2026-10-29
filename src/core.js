@@ -10,8 +10,13 @@
 /** Heading shapes we accept as a chapter break: 第12章 / Chapter 7 / 楔子 / 番外… */
 const HEADING = /^(?:第\s*[0-9０-９〇零一二三四五六七八九十百千两]{1,12}\s*[章节節回卷集部篇话話幕]|(?:chapter|ch\.)\s*\d{1,4}(?!\d)|序章|序言|自序|前言|楔子|引子|引言|尾声|尾聲|终章|終章|后记|後記|番外|完本感言|作者的话|作者的話)/i
 
-/** A heading line never ends a sentence, and never runs long. */
-const SENTENCE_PUNCTUATION = /[。！？；…!?;]/
+/**
+ * A heading line never ends a sentence — but a title may well ask a question or
+ * shout ("第103章那是他的魅力吗？", "第43章今天只能活一个！"). Only the marks that
+ * never appear in a title are treated as prose: a full stop, a semicolon, an
+ * ellipsis, or the ASCII equivalents.
+ */
+const SENTENCE_PUNCTUATION = /[。；…;]/
 
 /** Table-of-contents lines: dot leaders running out to a page number. */
 const TOC_LEADER = /(?:\.{3,}|…{2,}|·{3,}|-{4,})/
@@ -223,6 +228,47 @@ export function scrollOffsetFor(ratio, { clientHeight, scrollHeight }) {
  * the first page of the first chapter reads 0% and the last page reads 100%
  * instead of starting a few characters in.
  */
+/**
+ * Character offset of a position, measured in the sanitised book text. Storing
+ * this instead of a chapter index keeps a bookmark meaningful when the chapter
+ * list itself changes (a smarter heading rule, a re-encoded file): the index
+ * shifts, the offset does not.
+ */
+export function chapterOffset(chapters, index, ratio) {
+  const chapter = chapters?.[index]
+
+  if (!chapter) {
+    return null
+  }
+
+  const from = chapter.at ?? chapter.start
+
+  return Math.round(from + (chapter.end - from) * clamp01(ratio))
+}
+
+/** Which chapter holds a character offset; -1 when the list is empty. */
+export function chapterAtOffset(chapters, offset) {
+  if (!Array.isArray(chapters) || !chapters.length) {
+    return -1
+  }
+
+  if (!Number.isFinite(offset)) {
+    return -1
+  }
+
+  for (let i = 0; i < chapters.length; i++) {
+    if (offset < chapters[i].start) {
+      return Math.max(0, i - 1)
+    }
+
+    if (offset < chapters[i].end) {
+      return i
+    }
+  }
+
+  return chapters.length - 1
+}
+
 export function bookFraction(chapters, index, ratio) {
   const total = chapters.length ? chapters[chapters.length - 1].end : 0
   const chapter = chapters[index]

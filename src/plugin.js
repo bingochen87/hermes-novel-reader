@@ -25,8 +25,9 @@ import { Fragment, useEffect, useRef, useState } from 'react'
 import { jsx, jsxs } from 'react/jsx-runtime'
 // ---8<--- core: inlined by build.mjs from src/core.js ---8<---
 import {
-  bookFraction, dataUrlToBytes, decodeBookText, isBookFile, percentLabel, resumeLine,
-  sanitizeText, scrollOffsetFor, scrollRatio, sortBookEntries, splitChapters, titleFromPath
+  bookFraction, chapterAtOffset, chapterOffset, clamp01, dataUrlToBytes, decodeBookText, isBookFile,
+  percentLabel, resumeLine, sanitizeText, scrollOffsetFor, scrollRatio, sortBookEntries, splitChapters,
+  titleFromPath
 } from './core.js'
 // ---8<--- end core ---8<---
 
@@ -34,7 +35,7 @@ const ID = 'novel-reader'
 const PANE_WIDTH = '380px'
 const MIN_FONT = 13
 const MAX_FONT = 26
-const TOC_RENDER_LIMIT = 400
+const TOC_RENDER_LIMIT = 2000
 
 const DEFAULTS = { family: 'serif', fontSize: 17, lineHeight: 1.9, surface: 'float', theme: 'auto' }
 const BOOK_EXTENSIONS = ['txt', 'text', 'md', 'markdown']
@@ -208,7 +209,7 @@ const CSS = `
 .nr-surface[data-family=serif]{font-family:"Songti SC","Noto Serif CJK SC","Source Han Serif SC",Georgia,serif}
 .nr-surface[data-family=sans]{font-family:var(--font-ui,ui-sans-serif,system-ui,-apple-system,"PingFang SC",sans-serif)}
 .nr-chapter-title{margin:0 0 .9em;font-size:1.06em;font-weight:600;line-height:1.5;opacity:.85}
-.nr-list{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:4px}
+.nr-list{position:relative;flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:4px}
 .nr-row{display:flex;align-items:center;gap:8px;width:100%;padding:5px 8px;border:0;border-radius:4px;background:transparent;color:var(--ui-text-secondary);font:inherit;font-size:12px;text-align:left;cursor:pointer}
 .nr-row:hover{background:var(--chrome-action-hover);color:var(--ui-text-primary)}
 .nr-row[data-current=true]{color:var(--ui-accent)}
@@ -308,7 +309,15 @@ function savePosition(index, ratio) {
     return
   }
 
-  ctxRef.storage.set(`pos:${positionRel}`, { at: Date.now(), index, ratio })
+  // The chapter index is only meaningful for the split that produced it, so the
+  // bookmark also carries the character offset: re-splitting the book (a better
+  // heading rule, a re-encoded file) moves the index but not the offset.
+  ctxRef.storage.set(`pos:${positionRel}`, {
+    at: Date.now(),
+    index,
+    offset: chapterOffset(current().chapters, index, ratio),
+    ratio
+  })
 }
 
 /** Report scroll progress: cheap HUD updates, debounced storage writes. */
@@ -627,10 +636,20 @@ async function openBook(entry) {
 
     const split = splitChapters(text)
     const saved = ctxRef.storage.get(`pos:${key}`, null)
-    const index = saved && Number.isInteger(saved.index)
-      ? Math.min(Math.max(0, saved.index), split.chapters.length - 1)
-      : 0
-    const ratio = saved && Number.isFinite(saved.ratio) ? saved.ratio : 0
+    const chapters = split.chapters
+    const savedOffset = saved && Number.isFinite(saved.offset) ? saved.offset : null
+    const byOffset = savedOffset === null ? -1 : chapterAtOffset(chapters, savedOffset)
+    const index = byOffset >= 0
+      ? byOffset
+      : saved && Number.isInteger(saved.index)
+        ? Math.min(Math.max(0, saved.index), chapters.length - 1)
+        : 0
+    const chapter = chapters[index]
+    const ratio = byOffset >= 0
+      ? clamp01((savedOffset - chapter.start) / Math.max(1, chapter.end - chapter.start))
+      : saved && Number.isFinite(saved.ratio)
+        ? saved.ratio
+        : 0
     const name = titleFromPath(entry.name)
 
     ctxRef.storage.set('last', { rel: key })
@@ -933,10 +952,19 @@ function Toolbar({ state, t, toc, onToggleToc }) {
 
 function Toc({ state, t, onNavigate }) {
   const [filter, setFilter] = useState('')
+  const listRef = useRef(null)
   const needle = filter.trim().toLowerCase()
   const matches = []
+  const total = state.chapters.length
 
-  for (let i = 0; i < state.chapters.length; i++) {
+  // When the book runs past the render budget, the window starts at the current
+  // chapter instead of at chapter 1 — otherwise opening the list from deep in a
+  // long book shows a list the reader cannot find themselves in.
+  const first = !needle && total > TOC_RENDER_LIMIT
+    ? Math.max(0, Math.min(state.chapterIndex, total - TOC_RENDER_LIMIT))
+    : 0
+
+  for (let i = first; i < total; i++) {
     if (!needle ? matches.length < TOC_RENDER_LIMIT : state.chapters[i].title.toLowerCase().includes(needle)) {
       matches.push(i)
     }
@@ -945,6 +973,17 @@ function Toc({ state, t, onNavigate }) {
       break
     }
   }
+
+  // Open with the current chapter at the top of the list, the way a book's
+  // table of contents behaves when you flip to it from where you are.
+  useEffect(() => {
+    const list = listRef.current
+    const row = list?.querySelector('[data-current="true"]')
+
+    if (list && row) {
+      list.scrollTop = Math.max(0, row.offsetTop - 4)
+    }
+  }, [])
 
   return jsxs('div', {
     className: 'nr-column',
@@ -960,6 +999,7 @@ function Toc({ state, t, onNavigate }) {
       }),
       jsx('div', {
         className: 'nr-list',
+        ref: listRef,
         children: matches.map(index => jsx('button', {
           className: 'nr-row',
           'data-current': index === state.chapterIndex,
