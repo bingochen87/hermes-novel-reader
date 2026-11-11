@@ -3,7 +3,7 @@ label: Novel Reader
 version: 0.1.0
 author: bingochen87
 homepage: https://github.com/bingochen87/hermes-novel-reader
-requires_hermes: ">=0.22.0"
+requires_hermes: ">=0.22.6"
 description: >
   Read local .txt or .md novels beside the conversation while the agent works.
   Detects chapters from CJK and latin headings, trims a leading table of

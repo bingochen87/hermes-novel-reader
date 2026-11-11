@@ -26,6 +26,7 @@ Drop a folder of `.txt` / `.md` novels in — through the host's own folder pick
 - **Remembers locally** — the folder grant (kept by the app), your typography
   settings and one progress mark per book live in Hermes plugin storage, so
   reopening a book resumes where you stopped.
+- **Clipboard** — only when you press *copy bookmark*, which writes one line (book, chapter, percentage) to the clipboard.
 - **No network** — no telemetry, no update checks, no remote fonts or images.
 
 
@@ -55,7 +56,7 @@ The same reader as a full page (`/novel`, the sidebar row, or the status-bar chi
 
 ## Install
 
-Requires a Hermes desktop build that ships the plugin file door (`ctx.files`). On a build without it the reader still loads, but its empty state says so and offers no picker rather than a button that cannot work.
+Requires **Hermes 0.22.6 or newer** — the first release that ships the plugin file door (`ctx.files`). On an older build the reader still loads, but its empty state says so and offers no picker rather than a button that cannot work.
 
 ```bash
 git clone https://github.com/bingochen87/hermes-novel-reader.git
